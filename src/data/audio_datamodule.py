@@ -17,7 +17,6 @@ from lightning import LightningDataModule
 
 from src.data.hcqt import HarmonicCQT
 
-
 log = logging.getLogger(__name__)
 
 
@@ -202,7 +201,7 @@ class AudioDataModule(LightningDataModule):
         fname = "hcqt_" + hash_id + ".npy"
         return self.cache_dir / fname
 
-    def precompute_hcqt(self, audio_path: Path, annot_path: Path | None = None) -> Tuple[np.ndarray,np.ndarray]:
+    def precompute_hcqt(self, audio_path: Path, annot_path: Path | None = None) -> Tuple[np.ndarray, np.ndarray]:
         data_dir = audio_path.parent
 
         cqt_list = []
@@ -224,12 +223,13 @@ class AudioDataModule(LightningDataModule):
         for fname, annot in pbar:
             fname = fname.strip()
             pbar.set_description(fname)
-            x, sr = torchaudio.load(data_dir / fname)
+            x, sr = torchaudio.load(str(data_dir / fname))
             out = self.hcqt(x.mean(dim=0), sr)  # convert to mono and compute HCQT
 
             if annot is not None:
                 annot = annot.strip()
-                timesteps, freqs = np.loadtxt(data_dir / annot, delimiter=',', dtype=np.float32).T
+                freqs = np.loadtxt(data_dir / annot, delimiter=',', dtype=np.float32).T
+                timesteps = np.arange(len(freqs)) * 0.02
                 hop_duration = 1000 * (timesteps[1] - timesteps[0])
 
                 # Badly-aligned annotations is a fucking nightmare
@@ -242,6 +242,7 @@ class AudioDataModule(LightningDataModule):
                      f"The hop duration between CQT frames should be identical "
                      f"but got {hop_duration:.1f} ms vs {self.hop_duration:.1f} ms. "
                      f"Please either adjust the hop duration of the CQT or resample the annotations.")
+                # log.info(f"CQT len Difference: {len(out)} vs {len(freqs)}")
                 assert len(out) == len(freqs), \
                     (f"Inconsistency between {fname} and {annot}:"
                      f"the resolution of the annotations ({len(freqs):d}) "
@@ -261,4 +262,5 @@ class AudioDataModule(LightningDataModule):
             hop_length = int(self.hop_duration * sr / 1000 + 0.5)
             self.hcqt_kernels = HarmonicCQT(sr=sr, hop_length=hop_length, **self.hcqt_kwargs)
 
-        return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3)  # (time, harmonics, freq_bins, 2)
+        # Trim head and tail pad
+        return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3)[1:-1, ...]  # (time, harmonics, freq_bins, 2)
