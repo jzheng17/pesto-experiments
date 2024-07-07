@@ -13,9 +13,10 @@ import torch.nn as nn
 import torch.utils.data
 
 import torchaudio
-from lightning import LightningDataModule
+from pytorch_lightning import LightningDataModule 
 
 from src.data.hcqt import HarmonicCQT
+
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class AudioDataModule(LightningDataModule):
                  cache_dir: str = "./cache",
                  filter_unvoiced: bool = False,
                  mmap_mode: str | None = None):
-        r"""
+        """
 
         Args:
             audio_files: path to csv file containing the list of audio files to process
@@ -165,15 +166,17 @@ class AudioDataModule(LightningDataModule):
             self.val_sampler = torch.utils.data.SequentialSampler(self.val_dataset)
 
     def train_dataloader(self):
+        self.dl_kwargs['persistent_workers'] = True
         return torch.utils.data.DataLoader(self.train_dataset, sampler=self.train_sampler, **self.dl_kwargs)
 
     def val_dataloader(self):
+        self.dl_kwargs['persistent_workers'] = True
         return torch.utils.data.DataLoader(self.val_dataset, sampler=self.val_sampler, **self.dl_kwargs)
 
     def on_after_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
         x, y = batch
         return self.transforms(x), y
-
+    
     def load_data(self, audio_files: Path, annot_files: Path | None = None) -> torch.utils.data.Dataset:
         cache_cqt = self.build_cqt_filename(audio_files)
         if cache_cqt.exists():
@@ -201,15 +204,15 @@ class AudioDataModule(LightningDataModule):
         fname = "hcqt_" + hash_id + ".npy"
         return self.cache_dir / fname
 
-    def precompute_hcqt(self, audio_path: Path, annot_path: Path | None = None) -> Tuple[np.ndarray, np.ndarray]:
+    def precompute_hcqt(self, audio_path: Path, annot_path: Path | None = None) -> Tuple[np.ndarray,np.ndarray]:
         data_dir = audio_path.parent
 
         cqt_list = []
-        with audio_path.open('r') as f:
+        with audio_path.open('r',encoding="utf-16") as f:
             audio_files = f.readlines()
 
         if annot_path is not None:
-            with annot_path.open('r') as f:
+            with annot_path.open('r',encoding="utf-16") as f:
                 annot_files = f.readlines()
             annot_list = []
         else:
@@ -224,11 +227,12 @@ class AudioDataModule(LightningDataModule):
             fname = fname.strip()
             pbar.set_description(fname)
             x, sr = torchaudio.load(str(data_dir / fname))
-            out = self.hcqt(x.mean(dim=0), sr)  # convert to mono and compute HCQT
-
+            out = self.hcqt(x[1], sr)  # convert to mono and compute HCQT
+            def np_mid_to_hz(pitch:np.array):
+                return 440 * 2 **((pitch-69)/12)
             if annot is not None:
                 annot = annot.strip()
-                freqs = np.loadtxt(data_dir / annot, delimiter=',', dtype=np.float32).T
+                freqs = np_mid_to_hz(np.loadtxt(data_dir / annot, delimiter=',', dtype=np.float32).T)
                 timesteps = np.arange(len(freqs)) * 0.02
                 hop_duration = 1000 * (timesteps[1] - timesteps[0])
 
@@ -242,7 +246,6 @@ class AudioDataModule(LightningDataModule):
                      f"The hop duration between CQT frames should be identical "
                      f"but got {hop_duration:.1f} ms vs {self.hop_duration:.1f} ms. "
                      f"Please either adjust the hop duration of the CQT or resample the annotations.")
-                # log.info(f"CQT len Difference: {len(out)} vs {len(freqs)}")
                 assert len(out) == len(freqs), \
                     (f"Inconsistency between {fname} and {annot}:"
                      f"the resolution of the annotations ({len(freqs):d}) "
@@ -262,5 +265,5 @@ class AudioDataModule(LightningDataModule):
             hop_length = int(self.hop_duration * sr / 1000 + 0.5)
             self.hcqt_kernels = HarmonicCQT(sr=sr, hop_length=hop_length, **self.hcqt_kwargs)
 
-        # Trim head and tail pad
-        return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3)[1:-1, ...]  # (time, harmonics, freq_bins, 2)
+        return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3) [1:-1,...] # (time, harmonics, freq_bins, 2)
+
