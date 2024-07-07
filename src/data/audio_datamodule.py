@@ -205,11 +205,11 @@ class AudioDataModule(LightningDataModule):
         data_dir = audio_path.parent
 
         cqt_list = []
-        with audio_path.open('r',encoding="utf-16") as f:
+        with audio_path.open('r') as f:
             audio_files = f.readlines()
 
         if annot_path is not None:
-            with annot_path.open('r',encoding="utf-16") as f:
+            with annot_path.open('r') as f:
                 annot_files = f.readlines()
             annot_list = []
         else:
