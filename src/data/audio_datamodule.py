@@ -263,5 +263,6 @@ class AudioDataModule(LightningDataModule):
             hop_length = int(self.hop_duration * sr / 1000 + 0.5)
             self.hcqt_kernels = HarmonicCQT(sr=sr, hop_length=hop_length, **self.hcqt_kwargs)
 
+        # Trim head and tail pad
         return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3)[1:-1,...] # (time, harmonics, freq_bins, 2)
 
